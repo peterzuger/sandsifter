@@ -49,7 +49,7 @@ class InjectorResults(Structure):
                 ('signum', c_int),
                 ('sicode', c_int),
                 ('siaddr', c_int),
-		]
+                ]
 
 class Settings:
     SYNTH_MODE_RANDOM = "r"
@@ -614,8 +614,8 @@ class Gui:
                         # red.  doesn't happen if using a new random string each
                         # time; doesn't happen if using a constant string each
                         # time.  only happens with the specific implementation below.
-						#TODO: on systems with limited color settings, this
-						# makes the background look like random characters
+                                                #TODO: on systems with limited color settings, this
+                                                # makes the background look like random characters
                         random_string = ("%02x" % random.randint(0,100)) * (raw_width-2)
                         self.stdscr.addstr(top + 1 + y, left, random_string, curses.color_pair(self.BLACK))
 
