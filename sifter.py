@@ -31,25 +31,29 @@ INJECTOR = "./injector"
 arch = ""
 
 OUTPUT = "./data/"
-LOG  = OUTPUT + "log"
+LOG = OUTPUT + "log"
 SYNC = OUTPUT + "sync"
 TICK = OUTPUT + "tick"
 LAST = OUTPUT + "last"
+
 
 class ThreadState:
     pause = False
     run = True
 
+
 class InjectorResults(Structure):
-    _fields_ = [('disas_length', c_int),
-                ('disas_known', c_int),
-                ('raw_insn', c_ubyte * 16),
-                ('valid', c_int),
-                ('length', c_int),
-                ('signum', c_int),
-                ('sicode', c_int),
-                ('siaddr', c_int),
-                ]
+    _fields_ = [
+        ("disas_length", c_int),
+        ("disas_known", c_int),
+        ("raw_insn", c_ubyte * 16),
+        ("valid", c_int),
+        ("length", c_int),
+        ("signum", c_int),
+        ("sicode", c_int),
+        ("siaddr", c_int),
+    ]
+
 
 class Settings:
     SYNTH_MODE_RANDOM = "r"
@@ -68,7 +72,7 @@ class Settings:
         elif "-t" in args:
             self.synth_mode = self.SYNTH_MODE_TUNNEL
         self.args = args
-        self.root = (os.geteuid() == 0)
+        self.root = os.geteuid() == 0
         self.seed = random.getrandbits(32)
 
     def increment_synth_mode(self):
@@ -79,36 +83,43 @@ class Settings:
         elif self.synth_mode == self.SYNTH_MODE_TUNNEL:
             self.synth_mode = self.SYNTH_MODE_BRUTE
 
+
 class Tests:
-    r = InjectorResults() # current result
-    IL=20 # instruction log len
-    UL=10 # artifact log len
-    il = deque(maxlen=IL) # instruction log
-    al = deque(maxlen=UL) # artifact log
-    ad = dict() # artifact dict
-    ic = 0 # instruction count
-    ac = 0 # artifact count
+    r = InjectorResults()  # current result
+    IL = 20  # instruction log len
+    UL = 10  # artifact log len
+    il = deque(maxlen=IL)  # instruction log
+    al = deque(maxlen=UL)  # artifact log
+    ad = dict()  # artifact dict
+    ic = 0  # instruction count
+    ac = 0  # artifact count
     start_time = time.time()
 
     def elapsed(self):
         m, s = divmod(time.time() - self.start_time, 60)
         h, m = divmod(m, 60)
-        return "%02d:%02d:%02d.%02d" % (h, m, int(s), int(100*(s-int(s))) )
+        return "%02d:%02d:%02d.%02d" % (h, m, int(s), int(100 * (s - int(s))))
+
 
 class Tee(object):
     def __init__(self, name, mode):
         self.file = open(name, mode)
         self.stdout = sys.stdout
         sys.stdout = self
+
     def __del__(self):
         sys.stdout = self.stdout
         self.file.close()
+
     def write(self, data):
         self.file.write(data)
         self.stdout.write(data)
 
+
 # capstone disassembler
 md = None
+
+
 def disas_capstone(b):
     global md, arch
     if not md:
@@ -119,27 +130,36 @@ def disas_capstone(b):
     try:
         (address, size, mnemonic, op_str) = md.disasm_lite(b, 0, 1).next()
     except StopIteration:
-        mnemonic="(unk)"
-        op_str=""
+        mnemonic = "(unk)"
+        op_str = ""
         size = 0
     return (mnemonic, op_str, size)
+
 
 # ndisasm disassembler
 # (ndidsasm breaks unnecessary prefixes onto its own line, which makes parsing
 # the output difficult.  really only useful with the -P0 flag to disallow
 # prefixes)
 def disas_ndisasm(b):
-    b = ''.join('\\x%02x' % ord(c) for c in b)
+    b = "".join("\\x%02x" % ord(c) for c in b)
     if arch == "64":
-        dis, errors = subprocess.Popen("echo -ne '%s' | ndisasm -b64 - | head -2" % b,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True).communicate()
+        dis, errors = subprocess.Popen(
+            "echo -ne '%s' | ndisasm -b64 - | head -2" % b,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=True,
+        ).communicate()
     else:
-        dis, errors = subprocess.Popen("echo -ne '%s' | ndisasm -b32 - | head -2" % b,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True).communicate()
+        dis, errors = subprocess.Popen(
+            "echo -ne '%s' | ndisasm -b32 - | head -2" % b,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=True,
+        ).communicate()
     dis = dis.split("\n")
     extra = dis[1]
     dis = dis[0].split(None, 4)
-    if extra.strip()[0] == '-':
+    if extra.strip()[0] == "-":
         dis[1] = dis[1] + extra.strip()[1:]
 
     address = dis[0]
@@ -154,9 +174,10 @@ def disas_ndisasm(b):
         mnemonic = "(unk)"
         insn = ""
         op_str = ""
-    size = len(insn)/2
+    size = len(insn) / 2
 
     return (mnemonic, op_str, size)
+
 
 # objdump disassembler
 # (objdump breaks unnecessary prefixes onto its own line, which makes parsing
@@ -166,16 +187,24 @@ def disas_objdump(b):
     with open("/dev/shm/shifter", "w") as f:
         f.write(b)
     if arch == "64":
-        dis, errors = subprocess.Popen("objdump -D --insn-width=256 -b binary \
+        dis, errors = subprocess.Popen(
+            "objdump -D --insn-width=256 -b binary \
                 -mi386 -Mx86-64 /dev/shm/shifter | head -8 | tail -1",
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True).communicate()
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=True,
+        ).communicate()
     else:
-        dis, errors = subprocess.Popen("objdump -D --insn-width=256 -b binary \
+        dis, errors = subprocess.Popen(
+            "objdump -D --insn-width=256 -b binary \
                 -mi386 /dev/shm/shifter | head -8 | tail -1",
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True).communicate()
-    dis = dis[6:] # address
-    raw = dis[:256*3].replace(" ","")
-    dis = dis[256*3:].strip().split(None, 2)
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=True,
+        ).communicate()
+    dis = dis[6:]  # address
+    raw = dis[: 256 * 3].replace(" ", "")
+    dis = dis[256 * 3 :].strip().split(None, 2)
     mnemonic = dis[0]
     if len(dis) > 1:
         op_str = dis[1]
@@ -185,30 +214,38 @@ def disas_objdump(b):
         mnemonic = "(unk)"
         insn = ""
         op_str = ""
-    size = len(raw)/2
+    size = len(raw) / 2
     return (mnemonic, op_str, size)
 
+
 def cstr2py(s):
-    return ''.join([chr(x) for x in s])
+    return "".join([chr(x) for x in s])
+
 
 # targeting python 2.6 support
 def int_to_comma(x):
     if type(x) not in [type(0), type(0L)]:
         raise TypeError("Parameter must be an integer.")
     if x < 0:
-        return '-' + int_to_comma(-x)
-    result = ''
+        return "-" + int_to_comma(-x)
+    result = ""
     while x >= 1000:
         x, r = divmod(x, 1000)
         result = ",%03d%s" % (r, result)
     return "%d%s" % (x, result)
 
+
 def result_string(insn, result):
     s = "%30s %2d %2d %2d %2d (%s)\n" % (
-            hexlify(insn), result.valid,
-            result.length, result.signum,
-            result.sicode, hexlify(cstr2py(result.raw_insn)))
+        hexlify(insn),
+        result.valid,
+        result.length,
+        result.signum,
+        result.sicode,
+        hexlify(cstr2py(result.raw_insn)),
+    )
     return s
+
 
 class Injector:
     process = None
@@ -219,28 +256,28 @@ class Injector:
         self.settings = settings
 
     def start(self):
-        self.command = "%s %s -%c -R %s -s %d" % \
-                (
-                    INJECTOR,
-                    " ".join(self.settings.args),
-                    self.settings.synth_mode,
-                    "-0" if self.settings.root else "",
-                    self.settings.seed
-                )
+        self.command = "%s %s -%c -R %s -s %d" % (
+            INJECTOR,
+            " ".join(self.settings.args),
+            self.settings.synth_mode,
+            "-0" if self.settings.root else "",
+            self.settings.seed,
+        )
         self.process = subprocess.Popen(
             "exec %s" % self.command,
             shell=True,
             stdout=subprocess.PIPE,
             stdin=subprocess.PIPE,
-            preexec_fn=os.setsid
-            )
-        
+            preexec_fn=os.setsid,
+        )
+
     def stop(self):
         if self.process:
             try:
                 os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
             except OSError:
                 pass
+
 
 class Poll:
     SIGILL = 4
@@ -249,8 +286,20 @@ class Poll:
     SIGBUS = 7
     SIGTRAP = 5
 
-    def __init__(self, ts, injector, tests, command_line, sync=False, low_mem=False, search_unk=True,
-            search_len=False, search_dis=False, search_ill=False, disassembler=disas_capstone):
+    def __init__(
+        self,
+        ts,
+        injector,
+        tests,
+        command_line,
+        sync=False,
+        low_mem=False,
+        search_unk=True,
+        search_len=False,
+        search_dis=False,
+        search_ill=False,
+        disassembler=disas_capstone,
+    ):
         self.ts = ts
         self.injector = injector
         self.T = tests
@@ -282,12 +331,12 @@ class Poll:
     def stop(self):
         self.poll_thread.join()
         while self.ts.run:
-            time.sleep(.1)
+            time.sleep(0.1)
 
     def poll(self):
         while self.ts.run:
             while self.ts.pause:
-                time.sleep(.1)
+                time.sleep(0.1)
 
             bytes_polled = self.injector.process.stdout.readinto(self.T.r)
 
@@ -296,17 +345,33 @@ class Poll:
 
                 error = False
                 if self.T.r.valid:
-                    if self.search_unk and not self.T.r.disas_known and self.T.r.signum != self.SIGILL:
+                    if (
+                        self.search_unk
+                        and not self.T.r.disas_known
+                        and self.T.r.signum != self.SIGILL
+                    ):
                         error = True
-                    if self.search_len and self.T.r.disas_known and self.T.r.disas_length != self.T.r.length:
+                    if (
+                        self.search_len
+                        and self.T.r.disas_known
+                        and self.T.r.disas_length != self.T.r.length
+                    ):
                         error = True
-                    if self.search_dis and self.T.r.disas_known \
-                        and self.T.r.disas_length != self.T.r.length and self.T.r.signum != self.SIGILL:
+                    if (
+                        self.search_dis
+                        and self.T.r.disas_known
+                        and self.T.r.disas_length != self.T.r.length
+                        and self.T.r.signum != self.SIGILL
+                    ):
                         error = True
-                    if self.search_ill and self.T.r.disas_known and self.T.r.signum == self.SIGILL:
+                    if (
+                        self.search_ill
+                        and self.T.r.disas_known
+                        and self.T.r.signum == self.SIGILL
+                    ):
                         error = True
                 if error:
-                    insn = cstr2py(self.T.r.raw_insn)[:self.T.r.length]
+                    insn = cstr2py(self.T.r.raw_insn)[: self.T.r.length]
                     r = copy.deepcopy(self.T.r)
                     self.T.al.appendleft(r)
                     if insn not in self.T.ad:
@@ -321,10 +386,11 @@ class Poll:
                     self.ts.run = False
                     break
 
+
 class Gui:
-    TIME_SLICE = .01
+    TIME_SLICE = 0.01
     GRAY_BASE = 50
-    TICK_MASK = 0xff
+    TICK_MASK = 0xFF
     RATE_Q = 100
     RATE_FACTOR = 1000
 
@@ -334,18 +400,18 @@ class Gui:
 
     BLACK = 1
     WHITE = 2
-    BLUE =  3
-    RED =   4
+    BLUE = 3
+    RED = 4
     GREEN = 5
 
     COLOR_BLACK = 16
     COLOR_WHITE = 17
-    COLOR_BLUE =  18
-    COLOR_RED =   19
+    COLOR_BLUE = 18
+    COLOR_RED = 19
     COLOR_GREEN = 20
 
     def __init__(self, ts, injector, tests, do_tick, disassembler=disas_capstone):
-        self.ts = ts;
+        self.ts = ts
         self.injector = injector
         self.T = tests
         self.gui_thread = None
@@ -388,26 +454,24 @@ class Gui:
             curses.init_color(self.COLOR_GREEN, 0, 1000, 0)
 
             # this will remove flicker, but gives boring colors
-            '''
+            """
             self.COLOR_BLACK = curses.COLOR_BLACK
             self.COLOR_WHITE = curses.COLOR_WHITE
             self.COLOR_BLUE = curses.COLOR_BLUE
             self.COLOR_RED = curses.COLOR_RED
             self.COLOR_GREEN = curses.COLOR_GREEN
-            '''
+            """
 
             for i in xrange(0, self.GRAYS):
                 curses.init_color(
-                        self.GRAY_BASE + i,
-                        i * 1000 / (self.GRAYS - 1),
-                        i * 1000 / (self.GRAYS - 1),
-                        i * 1000 / (self.GRAYS - 1)
-                        )
+                    self.GRAY_BASE + i,
+                    i * 1000 / (self.GRAYS - 1),
+                    i * 1000 / (self.GRAYS - 1),
+                    i * 1000 / (self.GRAYS - 1),
+                )
                 curses.init_pair(
-                        self.GRAY_BASE + i,
-                        self.GRAY_BASE + i,
-                        self.COLOR_BLACK
-                        )
+                    self.GRAY_BASE + i, self.GRAY_BASE + i, self.COLOR_BLACK
+                )
 
         else:
             self.COLOR_BLACK = curses.COLOR_BLACK
@@ -417,11 +481,7 @@ class Gui:
             self.COLOR_GREEN = curses.COLOR_GREEN
 
             for i in xrange(0, self.GRAYS):
-                curses.init_pair(
-                        self.GRAY_BASE + i,
-                        self.COLOR_WHITE,
-                        self.COLOR_BLACK
-                        )
+                curses.init_pair(self.GRAY_BASE + i, self.COLOR_WHITE, self.COLOR_BLACK)
 
         curses.init_pair(self.BLACK, self.COLOR_BLACK, self.COLOR_BLACK)
         curses.init_pair(self.WHITE, self.COLOR_WHITE, self.COLOR_BLACK)
@@ -431,7 +491,9 @@ class Gui:
 
     def gray(self, scale):
         if curses.can_change_color():
-            return curses.color_pair(self.GRAY_BASE + int(round(scale * (self.GRAYS - 1))))
+            return curses.color_pair(
+                self.GRAY_BASE + int(round(scale * (self.GRAYS - 1)))
+            )
         else:
             return curses.color_pair(self.WHITE)
 
@@ -468,26 +530,35 @@ class Gui:
             top_bracket_middle = self.T.IL / 2
             mne_width = 10
             op_width = 45
-            raw_width = (16*2)
+            raw_width = 16 * 2
 
             # render log bracket
-            self.bracket(self.stdscr, left - 1, top, top_bracket_height + 2, self.gray(1))
+            self.bracket(
+                self.stdscr, left - 1, top, top_bracket_height + 2, self.gray(1)
+            )
 
             # render logo
-            self.vaddstr(self.stdscr, left - 3, top + top_bracket_middle - 5, "sand", self.gray(.2))
-            self.vaddstr(self.stdscr, left - 3, top + top_bracket_middle + 5, "sifter", self.gray(.2))
+            self.vaddstr(
+                self.stdscr,
+                left - 3,
+                top + top_bracket_middle - 5,
+                "sand",
+                self.gray(0.2),
+            )
+            self.vaddstr(
+                self.stdscr,
+                left - 3,
+                top + top_bracket_middle + 5,
+                "sifter",
+                self.gray(0.2),
+            )
 
             # refresh instruction log
             synth_insn = cstr2py(self.T.r.raw_insn)
             (mnemonic, op_str, size) = self.disas(synth_insn)
             self.T.il.append(
-                    (
-                        mnemonic,
-                        op_str,
-                        self.T.r.length,
-                        "%s" % hexlify(synth_insn)
-                    )
-                )
+                (mnemonic, op_str, self.T.r.length, "%s" % hexlify(synth_insn))
+            )
 
             # render instruction log
             try:
@@ -498,55 +569,59 @@ class Gui:
                         # latest instruction
                         # mnemonic
                         self.stdscr.addstr(
-                                top + 1 + line,
-                                left,
-                                "%*s " % (mne_width, mnemonic),
-                                self.gray(1)
-                                )
+                            top + 1 + line,
+                            left,
+                            "%*s " % (mne_width, mnemonic),
+                            self.gray(1),
+                        )
                         # operands
                         self.stdscr.addstr(
-                                top + 1 + line,
-                                left + (mne_width + 1),
-                                "%-*s " % (op_width, op_str),
-                                curses.color_pair(self.BLUE)
-                                )
+                            top + 1 + line,
+                            left + (mne_width + 1),
+                            "%-*s " % (op_width, op_str),
+                            curses.color_pair(self.BLUE),
+                        )
                         # bytes
-                        if self.maxx > left + (mne_width + 1) + (op_width + 1) + (raw_width + 1):
+                        if self.maxx > left + (mne_width + 1) + (op_width + 1) + (
+                            raw_width + 1
+                        ):
                             self.stdscr.addstr(
-                                    top + 1 + line,
-                                    left + (mne_width + 1) + (op_width + 1),
-                                    "%s" % raw[0:length * 2],
-                                    self.gray(.9)
-                                    )
+                                top + 1 + line,
+                                left + (mne_width + 1) + (op_width + 1),
+                                "%s" % raw[0 : length * 2],
+                                self.gray(0.9),
+                            )
                             self.stdscr.addstr(
-                                    top + 1 +line,
-                                    left + (mne_width + 1) + (op_width + 1) + length * 2,
-                                    "%s" % raw[length * 2:raw_width],
-                                    self.gray(.3)
-                                    )
+                                top + 1 + line,
+                                left + (mne_width + 1) + (op_width + 1) + length * 2,
+                                "%s" % raw[length * 2 : raw_width],
+                                self.gray(0.3),
+                            )
                     else:
                         # previous instructions
                         # mnemonic, operands
                         self.stdscr.addstr(
-                                top + 1 + line,
-                                left,
-                                "%*s %-*s" % (mne_width, mnemonic, op_width, op_str), 
-                                self.gray(.5)
-                                )
+                            top + 1 + line,
+                            left,
+                            "%*s %-*s" % (mne_width, mnemonic, op_width, op_str),
+                            self.gray(0.5),
+                        )
                         # bytes
-                        if self.maxx > left + (mne_width + 1) + (op_width + 1) + (raw_width + 1):
+                        if self.maxx > left + (mne_width + 1) + (op_width + 1) + (
+                            raw_width + 1
+                        ):
                             self.stdscr.addstr(
-                                    top + 1 + line,
-                                    left + (mne_width + 1) + (op_width + 1),
-                                    "%s" % raw[0:length * 2],
-                                    self.gray(.3)
-                                    )
+                                top + 1 + line,
+                                left + (mne_width + 1) + (op_width + 1),
+                                "%s" % raw[0 : length * 2],
+                                self.gray(0.3),
+                            )
                             self.stdscr.addstr(
-                                    top + 1 + line,
-                                    left + (mne_width + 1) + (op_width + 1) + length * 2,
-                                    "%s" % raw[length * 2:raw_width],
-                                    self.gray(.1)
-                                    )
+                                top + 1 + line,
+                                left + (mne_width + 1) + (op_width + 1) + length * 2,
+                                "%s" % raw[length * 2 : raw_width],
+                                self.gray(0.1),
+                            )
             except RuntimeError:
                 # probably the deque was modified by the poller
                 pass
@@ -557,50 +632,89 @@ class Gui:
             ctime = time.time()
             self.time_log.append(ctime - self.last_time)
             self.last_time = ctime
-            rate = int(sum(self.delta_log)/sum(self.time_log))
+            rate = int(sum(self.delta_log) / sum(self.time_log))
 
             # render timestamp
             if self.maxx > left + (mne_width + 1) + (op_width + 1) + (raw_width + 1):
                 self.vaddstr(
-                        self.stdscr,
-                        left + (mne_width + 1) + (op_width + 1) + (raw_width + 1),
-                        top + 1,
-                        self.T.elapsed(),
-                        self.gray(.5)
-                        )
+                    self.stdscr,
+                    left + (mne_width + 1) + (op_width + 1) + (raw_width + 1),
+                    top + 1,
+                    self.T.elapsed(),
+                    self.gray(0.5),
+                )
 
             # render injection settings
-            self.stdscr.addstr(top + 1, left - 8, "%d" % self.injector.settings.root, self.gray(.1))
-            self.stdscr.addstr(top + 1, left - 7, "%s" % arch, self.gray(.1))
-            self.stdscr.addstr(top + 1, left - 3, "%c" % self.injector.settings.synth_mode, self.gray(.5))
+            self.stdscr.addstr(
+                top + 1, left - 8, "%d" % self.injector.settings.root, self.gray(0.1)
+            )
+            self.stdscr.addstr(top + 1, left - 7, "%s" % arch, self.gray(0.1))
+            self.stdscr.addstr(
+                top + 1,
+                left - 3,
+                "%c" % self.injector.settings.synth_mode,
+                self.gray(0.5),
+            )
 
             # render injection results
-            self.stdscr.addstr(top + top_bracket_middle, left - 6, "v:", self.gray(.5))
-            self.stdscr.addstr(top + top_bracket_middle, left - 4, "%2x" % self.T.r.valid)
-            self.stdscr.addstr(top + top_bracket_middle + 1, left - 6, "l:", self.gray(.5))
-            self.stdscr.addstr(top + top_bracket_middle + 1, left - 4, "%2x" % self.T.r.length)
-            self.stdscr.addstr(top + top_bracket_middle + 2, left - 6, "s:", self.gray(.5))
-            self.stdscr.addstr(top + top_bracket_middle + 2, left - 4, "%2x" % self.T.r.signum)
-            self.stdscr.addstr(top + top_bracket_middle + 3, left - 6, "c:", self.gray(.5))
-            self.stdscr.addstr(top + top_bracket_middle + 3, left - 4, "%2x" % self.T.r.sicode)
-            
+            self.stdscr.addstr(top + top_bracket_middle, left - 6, "v:", self.gray(0.5))
+            self.stdscr.addstr(
+                top + top_bracket_middle, left - 4, "%2x" % self.T.r.valid
+            )
+            self.stdscr.addstr(
+                top + top_bracket_middle + 1, left - 6, "l:", self.gray(0.5)
+            )
+            self.stdscr.addstr(
+                top + top_bracket_middle + 1, left - 4, "%2x" % self.T.r.length
+            )
+            self.stdscr.addstr(
+                top + top_bracket_middle + 2, left - 6, "s:", self.gray(0.5)
+            )
+            self.stdscr.addstr(
+                top + top_bracket_middle + 2, left - 4, "%2x" % self.T.r.signum
+            )
+            self.stdscr.addstr(
+                top + top_bracket_middle + 3, left - 6, "c:", self.gray(0.5)
+            )
+            self.stdscr.addstr(
+                top + top_bracket_middle + 3, left - 4, "%2x" % self.T.r.sicode
+            )
+
             # render instruction count
-            self.stdscr.addstr(top + top_bracket_height + 2, left, "#", self.gray(.5))
-            self.stdscr.addstr(top + top_bracket_height + 2, left + 2, 
-                    "%s" % (int_to_comma(self.T.ic)), self.gray(1))
+            self.stdscr.addstr(top + top_bracket_height + 2, left, "#", self.gray(0.5))
+            self.stdscr.addstr(
+                top + top_bracket_height + 2,
+                left + 2,
+                "%s" % (int_to_comma(self.T.ic)),
+                self.gray(1),
+            )
             # render rate
-            self.stdscr.addstr(top + top_bracket_height + 3, left, 
-                    "  %d/s%s" % (rate, " " * min(rate / self.RATE_FACTOR, 100)), curses.A_REVERSE)
+            self.stdscr.addstr(
+                top + top_bracket_height + 3,
+                left,
+                "  %d/s%s" % (rate, " " * min(rate / self.RATE_FACTOR, 100)),
+                curses.A_REVERSE,
+            )
             # render artifact count
-            self.stdscr.addstr(top + top_bracket_height + 4, left, "#", self.gray(.5))
-            self.stdscr.addstr(top + top_bracket_height + 4, left + 2, 
-                    "%s" % (int_to_comma(self.T.ac)), curses.color_pair(self.RED))
+            self.stdscr.addstr(top + top_bracket_height + 4, left, "#", self.gray(0.5))
+            self.stdscr.addstr(
+                top + top_bracket_height + 4,
+                left + 2,
+                "%s" % (int_to_comma(self.T.ac)),
+                curses.color_pair(self.RED),
+            )
 
             # render artifact log
             if self.maxy >= top + top_bracket_height + 5 + self.T.UL + 2:
 
                 # render artifact bracket
-                self.bracket(self.stdscr, left - 1, top + top_bracket_height + 5, self.T.UL + 2, self.gray(1))
+                self.bracket(
+                    self.stdscr,
+                    left - 1,
+                    top + top_bracket_height + 5,
+                    self.T.UL + 2,
+                    self.gray(1),
+                )
 
                 # render artifacts
                 try:
@@ -614,15 +728,30 @@ class Gui:
                         # red.  doesn't happen if using a new random string each
                         # time; doesn't happen if using a constant string each
                         # time.  only happens with the specific implementation below.
-                                                #TODO: on systems with limited color settings, this
-                                                # makes the background look like random characters
-                        random_string = ("%02x" % random.randint(0,100)) * (raw_width-2)
-                        self.stdscr.addstr(top + 1 + y, left, random_string, curses.color_pair(self.BLACK))
+                        # TODO: on systems with limited color settings, this
+                        # makes the background look like random characters
+                        random_string = ("%02x" % random.randint(0, 100)) * (
+                            raw_width - 2
+                        )
+                        self.stdscr.addstr(
+                            top + 1 + y,
+                            left,
+                            random_string,
+                            curses.color_pair(self.BLACK),
+                        )
 
-                        self.stdscr.addstr(top + 1 + y, left + 1, 
-                                "%s" % insn_hex[0:r.length * 2], curses.color_pair(self.RED))
-                        self.stdscr.addstr(top + 1 + y, left + 1 + r.length * 2, 
-                                "%s" % insn_hex[r.length * 2:raw_width], self.gray(.25))
+                        self.stdscr.addstr(
+                            top + 1 + y,
+                            left + 1,
+                            "%s" % insn_hex[0 : r.length * 2],
+                            curses.color_pair(self.RED),
+                        )
+                        self.stdscr.addstr(
+                            top + 1 + y,
+                            left + 1 + r.length * 2,
+                            "%s" % insn_hex[r.length * 2 : raw_width],
+                            self.gray(0.25),
+                        )
                 except RuntimeError:
                     # probably the deque was modified by the poller
                     pass
@@ -640,13 +769,13 @@ class Gui:
 
     def checkkey(self):
         c = self.stdscr.getch()
-        if c == ord('p'):
+        if c == ord("p"):
             self.ts.pause = not self.ts.pause
-        elif c == ord('q'):
+        elif c == ord("q"):
             self.ts.run = False
-        elif c == ord('m'):
+        elif c == ord("m"):
             self.ts.pause = True
-            time.sleep(.1)
+            time.sleep(0.1)
             self.injector.stop()
             self.injector.settings.increment_synth_mode()
             self.injector.start()
@@ -656,12 +785,12 @@ class Gui:
         while self.ts.run:
             while self.ts.pause:
                 self.checkkey()
-                time.sleep(.1)
+                time.sleep(0.1)
 
-            (self.maxy,self.maxx) = self.stdscr.getmaxyx()
+            (self.maxy, self.maxx) = self.stdscr.getmaxyx()
 
             self.sx = 1
-            self.sy = max((self.maxy + 1 - (self.T.IL + self.T.UL + 5 + 2))/2, 0)
+            self.sy = max((self.maxy + 1 - (self.T.IL + self.T.UL + 5 + 2)) / 2, 0)
 
             self.checkkey()
 
@@ -673,15 +802,17 @@ class Gui:
             if self.do_tick:
                 self.ticks = self.ticks + 1
                 if self.ticks & self.TICK_MASK == 0:
-                    with open(TICK, 'w') as f:
+                    with open(TICK, "w") as f:
                         f.write("%s" % hexlify(synth_insn))
 
             time.sleep(self.TIME_SLICE)
+
 
 def get_cpu_info():
     with open("/proc/cpuinfo", "r") as f:
         cpu = [l.strip() for l in f.readlines()[:7]]
     return cpu
+
 
 def dump_artifacts(r, injector, command_line):
     global arch
@@ -701,12 +832,13 @@ def dump_artifacts(r, injector, command_line):
 
     cpu = get_cpu_info()
     for l in cpu:
-        tee.write("# %s\n" % l) 
+        tee.write("# %s\n" % l)
 
     tee.write("# %s  v  l  s  c\n" % (" " * 28))
     for k in sorted(list(r.ad)):
         v = r.ad[k]
         tee.write(result_string(k, v))
+
 
 def cleanup(gui, poll, injector, ts, tests, command_line, args):
     ts.run = False
@@ -717,14 +849,14 @@ def cleanup(gui, poll, injector, ts, tests, command_line, args):
     if injector:
         injector.stop()
 
-    '''
+    """
     # doesn't work
     if gui:
         for (i, c) in enumerate(gui.orig_colors):
             curses.init_color(i, c[0], c[1], c[2])
-    '''
+    """
 
-    curses.nocbreak();
+    curses.nocbreak()
     curses.echo()
     curses.endwin()
 
@@ -736,8 +868,10 @@ def cleanup(gui, poll, injector, ts, tests, command_line, args):
 
     sys.exit(0)
 
+
 def main():
     global arch
+
     def exit_handler(signal, frame):
         cleanup(gui, poll, injector, ts, tests, command_line, args)
 
@@ -748,45 +882,73 @@ def main():
     command_line = " ".join(sys.argv)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--len", action="store_true", default=False,
-            help="search for length differences in all instructions (instructions\
+    parser.add_argument(
+        "--len",
+        action="store_true",
+        default=False,
+        help="search for length differences in all instructions (instructions\
             that executed differently than the disassembler expected, or did not\
-            exist when the disassembler expected them to)"
-            )
-    parser.add_argument("--dis", action="store_true", default=False,
-            help="search for length differences in valid instructions (instructions\
-            that executed differently than the disassembler expected)"
-            )
-    parser.add_argument("--unk", action="store_true", default=False,
-            help="search for unknown instructions (instructions that the\
-            disassembler doesn't know about but successfully execute)"
-            )
-    parser.add_argument("--ill", action="store_true", default=False,
-            help="the inverse of --unk, search for invalid disassemblies\
+            exist when the disassembler expected them to)",
+    )
+    parser.add_argument(
+        "--dis",
+        action="store_true",
+        default=False,
+        help="search for length differences in valid instructions (instructions\
+            that executed differently than the disassembler expected)",
+    )
+    parser.add_argument(
+        "--unk",
+        action="store_true",
+        default=False,
+        help="search for unknown instructions (instructions that the\
+            disassembler doesn't know about but successfully execute)",
+    )
+    parser.add_argument(
+        "--ill",
+        action="store_true",
+        default=False,
+        help="the inverse of --unk, search for invalid disassemblies\
             (instructions that do not successfully execute but that the\
-            disassembler acknowledges)"
-            )
-    parser.add_argument("--tick", action="store_true", default=False,
-            help="periodically write the current instruction to disk"
-            )
-    parser.add_argument("--save", action="store_true", default=False,
-            help="save search progress on exit"
-            )
-    parser.add_argument("--resume", action="store_true", default=False,
-            help="resume search from last saved state"
-            )
-    parser.add_argument("--sync", action="store_true", default=False,
-            help="write search results to disk as they are found"
-            )
-    parser.add_argument("--low-mem", action="store_true", default=False,
-            help="do not store results in memory"
-            )
+            disassembler acknowledges)",
+    )
+    parser.add_argument(
+        "--tick",
+        action="store_true",
+        default=False,
+        help="periodically write the current instruction to disk",
+    )
+    parser.add_argument(
+        "--save",
+        action="store_true",
+        default=False,
+        help="save search progress on exit",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        default=False,
+        help="resume search from last saved state",
+    )
+    parser.add_argument(
+        "--sync",
+        action="store_true",
+        default=False,
+        help="write search results to disk as they are found",
+    )
+    parser.add_argument(
+        "--low-mem",
+        action="store_true",
+        default=False,
+        help="do not store results in memory",
+    )
     parser.add_argument("injector_args", nargs=argparse.REMAINDER)
 
     args = parser.parse_args()
 
     injector_args = args.injector_args
-    if "--" in injector_args: injector_args.remove("--")
+    if "--" in injector_args:
+        injector_args.remove("--")
 
     if not args.len and not args.unk and not args.dis and not args.ill:
         print "warning: no search type (--len, --unk, --dis, --ill) specified, results will not be recorded."
@@ -800,7 +962,7 @@ def main():
         if os.path.exists(LAST):
             with open(LAST, "r") as f:
                 insn = f.read()
-                injector_args.extend(['-i',insn])
+                injector_args.extend(["-i", insn])
         else:
             print "no resume file found"
             sys.exit(1)
@@ -808,12 +970,9 @@ def main():
     if not os.path.exists(OUTPUT):
         os.makedirs(OUTPUT)
 
-    injector_bitness, errors = \
-        subprocess.Popen(
-                ['file', INJECTOR],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-                ).communicate()
+    injector_bitness, errors = subprocess.Popen(
+        ["file", INJECTOR], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    ).communicate()
     arch = re.search(r".*(..)-bit.*", injector_bitness).group(1)
 
     ts = ThreadState()
@@ -826,17 +985,28 @@ def main():
     injector = Injector(settings)
     injector.start()
 
-    poll = Poll(ts, injector, tests, command_line, args.sync, 
-                    args.low_mem, args.unk, args.len, args.dis, args.ill)
+    poll = Poll(
+        ts,
+        injector,
+        tests,
+        command_line,
+        args.sync,
+        args.low_mem,
+        args.unk,
+        args.len,
+        args.dis,
+        args.ill,
+    )
     poll.start()
 
     gui = Gui(ts, injector, tests, args.tick)
     gui.start()
 
     while ts.run:
-        time.sleep(.1)
+        time.sleep(0.1)
 
     cleanup(gui, poll, injector, ts, tests, command_line, args)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
